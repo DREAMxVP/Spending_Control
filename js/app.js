@@ -1,7 +1,68 @@
 import { simularTodos, crescimentoMensal } from "./analysis.js";
-import { 
-  atualizarGraficoInvestimentos, 
-  atualizarGraficoMensal 
+
+const investimentos = {
+  "Poupança": 6.17,
+  "Tesouro Selic": 13.25,
+  "CDB 100% CDI": 13.15,
+  "CDB 110% CDI": 14.46,
+  "LCI/LCA": 12.5,
+  "Fundo DI": 12.8
+};
+
+// Function to update investments
+function atualizarInvestimentos(cdiRate) {
+  investimentos["Tesouro Selic"] = cdiRate;
+  investimentos["CDB 100% CDI"] = cdiRate;
+  investimentos["CDB 110% CDI"] = cdiRate * 1.1;
+  investimentos["LCI/LCA"] = cdiRate * 0.95;
+  investimentos["Fundo DI"] = cdiRate * 0.98;
+}
+
+// Modify simularTodos to use the local investimentos
+function simularTodosLocal(valor, meses) {
+  const resultados = [];
+
+  for (let nome in investimentos) {
+    const taxa = investimentos[nome];
+    const total = simularMensalLocal(valor, taxa, meses);
+
+    resultados.push({
+      nome,
+      taxa,
+      total,
+      lucro: total - (valor * meses)
+    });
+  }
+
+  return resultados.sort((a, b) => b.total - a.total);
+}
+
+function simularMensalLocal(valor, taxa, meses) {
+  const taxaMensal = taxa / 100 / 12;
+  let total = 0;
+
+  for (let i = 0; i < meses; i++) {
+    total = (total + valor) * (1 + taxaMensal);
+  }
+
+  return total;
+}
+
+function crescimentoMensalLocal(valor, taxa, meses) {
+  const taxaMensal = taxa / 100 / 12;
+  let total = 0;
+  const historico = [];
+
+  for (let i = 0; i < meses; i++) {
+    total = (total + valor) * (1 + taxaMensal);
+    historico.push(total);
+  }
+
+  return historico;
+}
+import {
+  atualizarGraficoInvestimentos,
+  atualizarGraficoMensal
 } from "./charts.js";
 
 const valorInput = document.getElementById("valorInvestimento");
@@ -15,7 +76,7 @@ mesesInput.addEventListener("input", atualizarAutomatico);
 // Atualização principal
 function atualizarAutomatico() {
 
-  const valor = parseFloat(valorInput.value);
+  const valor = unformatCurrency(valorInput.value);
   const meses = parseInt(mesesInput.value);
 
   if (!valor || valor <= 0 || !meses || meses <= 0) {
@@ -24,7 +85,7 @@ function atualizarAutomatico() {
   }
 
   // 🔥 Simula todos investimentos
-  const resultados = simularTodos(valor, meses);
+  const resultados = simularTodosLocal(valor, meses);
 
   // 🔥 Cria tabela ranking
   criarTabelaRanking(resultados);
@@ -34,36 +95,43 @@ function atualizarAutomatico() {
 
   // 🔥 Crescimento mês a mês do melhor investimento
   const melhor = resultados[0];
-  const historico = crescimentoMensal(valor, melhor.taxa, meses);
+  const historico = crescimentoMensalLocal(valor, melhor.taxa, meses);
 
   atualizarGraficoMensal(historico);
 }
 
+// Atualização automática a cada 30 segundos com valores padrão
+setInterval(async () => {
+  // Aguardar atualização das taxas
+  await atualizarIndices();
+  
+  const valorPadrao = unformatCurrency(document.getElementById("valorInvestimento").value) || 500;
+  const mesesPadrao = 12;
+
+  const resultados = simularTodosLocal(valorPadrao, mesesPadrao);
+  criarTabelaRanking(resultados);
+  atualizarGraficoInvestimentos(resultados);
+
+  const melhor = resultados[0];
+  const historico = crescimentoMensalLocal(valorPadrao, melhor.taxa, mesesPadrao);
+  atualizarGraficoMensal(historico);
+}, 30000);
+
 
 // 🔥 TABELA PROFISSIONAL
 function criarTabelaRanking(resultados) {
-
-  resultadoContainer.innerHTML = `
-    <table>
-      <tr>
-        <th>#</th>
-        <th>Investimento</th>
-        <th>Taxa</th>
-        <th>Total Final</th>
-        <th>Lucro</th>
-      </tr>
-
-      ${resultados.map((r, i) => `
-        <tr>
-          <td>${i + 1}</td>
-          <td>${i === 0 ? "🏆" : ""} ${r.nome}</td>
-          <td>${r.taxa}%</td>
-          <td>R$ ${r.total.toFixed(2)}</td>
-          <td>R$ ${r.lucro.toFixed(2)}</td>
-        </tr>
-      `).join("")}
-    </table>
-  `;
+  let html = `<table><tr><th>#</th><th>Investimento</th><th>Taxa</th><th>Total Final</th><th>Lucro</th></tr>`;
+  resultados.forEach((r, i) => {
+    html += `<tr${i === 0 ? ' style="background:rgba(162,89,255,0.15);font-weight:bold"' : ''}>
+      <td>${i === 0 ? '🏆' : i + 1}</td>
+      <td>${r.nome}</td>
+      <td>${r.taxa.toFixed(2).replace('.', ',')}%</td>
+      <td>R$ ${r.total.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td>R$ ${r.lucro.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+    </tr>`;
+  });
+  html += `</table>`;
+  document.getElementById("resultadoInvestimentos").innerHTML = html;
 }
 
 const ativosFake = [
@@ -112,7 +180,7 @@ async function atualizarIndice(simbolo, elementoId) {
 
     if (!quote) return;
 
-    const variacao = parseFloat(quote["10. change percent"].replace("%",""));
+    const variacao = parseFloat(quote["10. change percent"].replace("%", ""));
     const preco = parseFloat(quote["05. price"]);
 
     const elemento = document.getElementById(elementoId);
@@ -133,3 +201,507 @@ async function atualizarIndice(simbolo, elementoId) {
 setInterval(() => {
   atualizarIndice("PETR4.SAO", "indice1");
 }, 30000);
+
+async function atualizarDolar() {
+  const response = await fetch("https://economia.awesomeapi.com.br/json/last/USD-BRL");
+  const data = await response.json();
+
+  const valor = parseFloat(data.USDBRL.bid);
+  const variacao = parseFloat(data.USDBRL.pctChange);
+
+  document.getElementById("dolar").innerHTML = `
+    💵 Dólar: R$ ${valor.toFixed(2)} 
+    <span style="color:${variacao > 0 ? "#00ff9d" : "#ff4d6d"}">
+      ${variacao > 0 ? "+" : ""}${variacao.toFixed(2)}%
+    </span>
+  `;
+}
+
+async function atualizarEuro() {
+  const response = await fetch("https://economia.awesomeapi.com.br/json/last/EUR-BRL");
+  const data = await response.json();
+
+  const valor = parseFloat(data.EURBRL.bid);
+  const variacao = parseFloat(data.EURBRL.pctChange);
+
+  document.getElementById("euro").innerHTML = `
+    💶 Euro: R$ ${valor.toFixed(2)} 
+    <span style="color:${variacao > 0 ? "#00ff9d" : "#ff4d6d"}">
+      ${variacao > 0 ? "+" : ""}${variacao.toFixed(2)}%
+    </span>
+  `;
+}
+
+async function atualizarBitcoin() {
+  const response = await fetch("https://economia.awesomeapi.com.br/json/last/BTC-BRL");
+  const data = await response.json();
+
+  const valor = parseFloat(data.BTCBRL.bid);
+  const variacao = parseFloat(data.BTCBRL.pctChange);
+
+  document.getElementById("bitcoin").innerHTML = `
+    ₿ Bitcoin: R$ ${valor.toLocaleString("pt-BR")}
+    <span style="color:${variacao > 0 ? "#00ff9d" : "#ff4d6d"}">
+      ${variacao > 0 ? "+" : ""}${variacao.toFixed(2)}%
+    </span>
+  `;
+}
+
+async function atualizarIBOV() {
+  try {
+    const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=^BVSP&apikey=${API_KEY}`);
+    const data = await response.json();
+    const quote = data["Global Quote"];
+
+    if (quote) {
+      const valor = parseFloat(quote["05. price"]);
+      const variacao = parseFloat(quote["10. change percent"].replace("%", ""));
+
+      document.getElementById("ibov").innerHTML = `
+        📈 IBOV: ${valor.toLocaleString("pt-BR")}
+        <span style="color:${variacao > 0 ? "#00ff9d" : "#ff4d6d"}">
+          ${variacao > 0 ? "+" : ""}${variacao.toFixed(2)}%
+        </span>
+      `;
+    }
+  } catch (error) {
+    console.log("Erro ao atualizar IBOV:", error);
+  }
+}
+
+async function atualizarCDI() {
+  // Usar CDI fixo por enquanto, já que a API está retornando dados incorretos
+  const cdiRate = 13.25;
+  document.getElementById("cdi").innerHTML = `
+    💰 CDI (último valor): ${cdiRate.toFixed(2)}%
+  `;
+  atualizarInvestimentos(cdiRate);
+}
+
+async function atualizarIndices() {
+  await atualizarDolar();
+  await atualizarIBOV();
+  await atualizarCDI();
+  await atualizarEuro();
+  await atualizarBitcoin();
+}
+
+// Atualiza ao carregar
+atualizarIndices();
+
+// Função para formatar moeda brasileira
+function formatCurrency(value) {
+  // Remove tudo que não é dígito
+  let num = value.replace(/\D/g, '');
+  // Adiciona zeros à esquerda se necessário
+  num = num.padStart(3, '0');
+  // Divide por 100 para ter centavos
+  let floatNum = parseFloat(num) / 100;
+  // Formata com separadores brasileiros e R$
+  return 'R$ ' + floatNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Função para desformatar moeda brasileira
+function unformatCurrency(value) {
+  return parseFloat(value.replace('R$ ', '').replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+// Aplica formatação aos inputs de moeda
+function applyCurrencyMask(inputId) {
+  const input = document.getElementById(inputId);
+  input.addEventListener('input', function() {
+    let value = this.value;
+    this.value = formatCurrency(value);
+  });
+  input.addEventListener('focus', function() {
+    if (this.value === 'R$ 0,00') this.value = '';
+  });
+  input.addEventListener('blur', function() {
+    if (this.value === '') this.value = 'R$ 0,00';
+  });
+}
+
+// Aplica máscara aos inputs relevantes
+applyCurrencyMask('rendaMensal');
+applyCurrencyMask('gastosFixos');
+applyCurrencyMask('alimentacao');
+applyCurrencyMask('transporte');
+applyCurrencyMask('lazer');
+applyCurrencyMask('valorInvestimento');
+applyCurrencyMask('valorInicial');
+applyCurrencyMask('valorMensal');
+
+function mostrarAlerta(mensagem) {
+  const alertaExistente = document.querySelector('.alertaFlutuante');
+  if (alertaExistente) {
+    alertaExistente.classList.add('saindo');
+    setTimeout(() => {
+      if (document.body.contains(alertaExistente)) {
+        document.body.removeChild(alertaExistente);
+      }
+      criarNovoAlerta(mensagem);
+    }, 500);
+  } else {
+    criarNovoAlerta(mensagem);
+  }
+}
+
+function criarNovoAlerta(mensagem) {
+  const alerta = document.createElement('div');
+  alerta.className = 'alertaFlutuante';
+  alerta.textContent = mensagem;
+  document.body.appendChild(alerta);
+  setTimeout(() => {
+    if (document.body.contains(alerta)) {
+      alerta.classList.add('saindo');
+      setTimeout(() => document.body.removeChild(alerta), 500);
+    }
+  }, 3000);
+}
+
+let graficoMilhao;
+let investorListenerAdded = false; // control for Saiba Investir delegation
+
+document.getElementById("calcularOrcamento").addEventListener("click", () => {
+  const renda = unformatCurrency(document.getElementById("rendaMensal").value);
+  const fixos = unformatCurrency(document.getElementById("gastosFixos").value);
+  const ali = unformatCurrency(document.getElementById("alimentacao").value);
+  const trans = unformatCurrency(document.getElementById("transporte").value);
+  const laz = unformatCurrency(document.getElementById("lazer").value);
+
+  // Validação: obrigar renda a ser informada e positiva
+  if (isNaN(renda) || renda <= 0) {
+    mostrarAlerta('Por favor, insira uma renda mensal válida e positiva.');
+    return;
+  }
+
+  const totalGastos = fixos + ali + trans + laz;
+  const sobras = renda - totalGastos;
+
+  document.getElementById("resultadoOrcamento").innerHTML = `
+    <h3>📊 Resultado do Orçamento</h3>
+    <p>Renda: R$ ${renda.toFixed(2)}</p>
+    <p>Total de Gastos: R$ ${totalGastos.toFixed(2)}</p>
+    <p><strong>Sobras para Investir: R$ ${sobras.toFixed(2)}</strong></p>
+    ${sobras > 0 ? `<p>💡 Com R$ ${sobras.toFixed(2)} por mês, você pode investir e alcançar seus objetivos!</p><button class="btnSaibaInvestir">💼 Saiba Investir!</button>` : `<p>⚠️ Seus gastos estão acima da renda. Considere reduzir despesas.</p>`}
+  `;
+
+  // Adiciona evento ao botão "Saiba Investir!" (delegação para evitar múltiplos handlers)
+  if (!investorListenerAdded) {
+    const container = document.getElementById("resultadoOrcamento");
+    if (container) {
+      container.addEventListener("click", (e) => {
+        if (e.target && e.target.classList.contains("btnSaibaInvestir")) {
+          abrirModalInvestimento();
+        }
+      });
+      investorListenerAdded = true;
+    }
+  }
+
+
+  // Auto-preencher o valor de investimento com as sobras
+  if (sobras > 0) {
+    document.getElementById("valorInvestimento").value = sobras;
+    // Trigger the update
+    atualizarAutomatico();
+    // Also set in million calculator
+    document.getElementById("valorMensal").value = sobras;
+  }
+});
+
+document.getElementById("calcularMilhao").addEventListener("click", () => {
+
+  const valorInicial = unformatCurrency(document.getElementById("valorInicial").value);
+  const valorMensal = unformatCurrency(document.getElementById("valorMensal").value);
+  const taxaAnual = parseFloat(document.getElementById("taxaJuros").value) / 100;
+
+  // Validação: obrigar valor mensal a ser informado e positivo
+  if (isNaN(valorMensal) || valorMensal <= 0) {
+    mostrarAlerta('Por favor, insira um valor mensal válido e positivo.');
+    return;
+  }
+
+  const taxaMensal = Math.pow(1 + taxaAnual, 1/12) - 1;
+
+  let total = valorInicial;
+  let meses = 0;
+
+  let dados = [];
+  let labels = [];
+
+  while (total < 1000000) {
+    total = total * (1 + taxaMensal) + valorMensal;
+    meses++;
+
+    dados.push(total);
+    labels.push(`Mês ${meses}`);
+
+    if (meses > 1000) break;
+  }
+
+  const anos = Math.floor(meses / 12);
+  const mesesRestantes = meses % 12;
+
+  document.getElementById("resultadoMilhao").innerHTML = `
+    <h3>📊 Resultado</h3>
+    <p>Você atingirá R$ 1.000.000 em:</p>
+    <strong>${anos} anos e ${mesesRestantes} meses</strong>
+  `;
+
+  criarGraficoMilhao(labels, dados);
+});
+
+
+function criarGraficoMilhao(labels, dados) {
+
+  const ctx = document.getElementById("graficoMilhao").getContext("2d");
+
+  if (graficoMilhao) {
+    graficoMilhao.destroy();
+  }
+
+  graficoMilhao = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Crescimento do Investimento",
+          data: dados,
+          borderColor: "#a259ff",
+          backgroundColor: "rgba(162,89,255,0.1)",
+          tension: 0.4,
+          fill: true,
+          pointRadius: 0
+        },
+        {
+          label: "Meta 1 Milhão",
+          data: Array(labels.length).fill(1000000),
+          borderColor: "#00ff9d",
+          borderDash: [5,5],
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: {
+        duration: 2000
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: "#fff"
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#aaa" }
+        },
+        y: {
+          ticks: {
+            color: "#aaa",
+            callback: function(value) {
+              return "R$ " + value.toLocaleString("pt-BR");
+            }
+          }
+        }
+      }
+    }
+  });
+}
+// ===== FUNÇÕES DO MODAL DE INVESTIMENTOS =====
+
+function abrirModalInvestimento() {
+  const modal = document.getElementById("modalInvestimento");
+  const overlay = document.getElementById("overlayModal");
+  
+  modal.classList.add("ativo");
+  overlay.classList.add("ativo");
+  
+  // Impede scroll do body quando modal está aberto
+  document.body.style.overflow = "hidden";
+}
+
+function fecharModalInvestimento() {
+  const modal = document.getElementById("modalInvestimento");
+  const overlay = document.getElementById("overlayModal");
+  
+  modal.classList.remove("ativo");
+  overlay.classList.remove("ativo");
+  
+  // Restaura scroll do body
+  document.body.style.overflow = "auto";
+}
+
+function irParaSecaoInvestimentos() {
+  fecharModalInvestimento();
+  
+  // Faz scroll suave para a seção de investimentos
+  const secaoInvestimentos = document.querySelector(".dashboard");
+  if (secaoInvestimentos) {
+    setTimeout(() => {
+      secaoInvestimentos.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 300);
+  }
+}
+
+// ===== TOUR DE ORIENTAÇÃO =====
+
+let tourSteps = [];
+let tourCurrent = 0;
+let tourCallback = null;
+
+function startTour(steps, callback) {
+  tourSteps = steps;
+  tourCurrent = 0;
+  tourCallback = callback;
+
+  // remove any existing cancel button to start clean
+  const oldCancel = document.getElementById("tourCancel");
+  if (oldCancel) {
+    oldCancel.remove();
+  }
+
+  const overlay = document.getElementById("overlayTour");
+  const message = document.getElementById("tourMessage");
+  const text = document.getElementById("tourText");
+  const btnNext = document.getElementById("tourNext");
+  const btnPrev = document.getElementById("tourPrev");
+  const btnEnd = document.getElementById("tourEnd");
+
+  overlay.classList.add("ativo");
+  message.style.display = "block";
+
+  function showStep() {
+    const step = tourSteps[tourCurrent];
+    text.textContent = step.text;
+
+    // highlight element
+    tourSteps.forEach(s => {
+      const el = document.querySelector(s.selector);
+      if (el) el.classList.remove("tourHighlight");
+    });
+    const el = document.querySelector(step.selector);
+    if (el) {
+      el.classList.add("tourHighlight");
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    btnPrev.style.display = tourCurrent > 0 ? "inline-block" : "none";
+    if (tourCurrent === tourSteps.length - 1) {
+      btnNext.style.display = "none";
+      btnEnd.style.display = "inline-block";
+    } else {
+      btnNext.style.display = "inline-block";
+      btnEnd.style.display = "none";
+    }
+  }
+
+  btnNext.onclick = () => {
+    tourCurrent++;
+    showStep();
+  };
+
+  btnPrev.onclick = () => {
+    tourCurrent--;
+    showStep();
+  };
+
+  btnEnd.onclick = () => {
+    const el = document.querySelector(tourSteps[tourCurrent].selector);
+    if (el) el.classList.remove("tourHighlight");
+    overlay.classList.remove("ativo");
+    message.style.display = "none";
+    if (tourCallback) tourCallback();
+  };
+
+  showStep();
+}
+
+function perguntaMilhao() {
+  const overlay = document.getElementById("overlayTour");
+  const message = document.getElementById("tourMessage");
+  const text = document.getElementById("tourText");
+  const btnNext = document.getElementById("tourNext");
+  const btnPrev = document.getElementById("tourPrev");
+  const btnEnd = document.getElementById("tourEnd");
+
+  text.innerHTML = "<strong>Deseja seguir para a Calculadora do Primeiro Milhão?</strong>";
+  btnPrev.style.display = "none";
+  btnNext.style.display = "none";
+  btnEnd.textContent = "Sim, vamos!";
+
+  // add cancel button if not already
+  let cancel = document.getElementById("tourCancel");
+  if (!cancel) {
+    cancel = document.createElement("button");
+    cancel.id = "tourCancel";
+    cancel.textContent = "Ainda não";
+    cancel.style.margin = "0 5px";
+    cancel.style.padding = "10px 15px";
+    cancel.style.background = "#ff4d6d";
+    cancel.style.border = "none";
+    cancel.style.color = "white";
+    cancel.style.borderRadius = "8px";
+    cancel.style.cursor = "pointer";
+    cancel.addEventListener("click", () => {
+      overlay.classList.remove("ativo");
+      message.style.display = "none";
+    });
+    message.querySelector(".tourButtons").appendChild(cancel);
+  }
+
+  btnEnd.onclick = () => {
+    overlay.classList.remove("ativo");
+    message.style.display = "none";
+    // iniciar tour do milhão
+    const stepsMilhao = [
+      {selector: "#valorInicial", text: "Comece informando o valor inicial que você já possui."},
+      {selector: "#valorMensal", text: "Aqui coloque o quanto irá investir todo mês (geralmente suas sobras)."},
+      {selector: "#taxaJuros", text: "Informe a taxa de juros anual estimada (p.ex. 8%)."},
+      {selector: "#resultadoMilhao", text: "O resultado aparecerá aqui com tempo para atingir 1 milhão."}
+    ];
+    startTour(stepsMilhao);
+  };
+}
+
+
+// Event listeners do modal
+document.addEventListener("DOMContentLoaded", () => {
+  const btnFechar = document.querySelector(".btnFecharModal");
+  const btnComecar = document.getElementById("btnComecar");
+  const overlay = document.getElementById("overlayModal");
+  
+  if (btnFechar) {
+    btnFechar.addEventListener("click", fecharModalInvestimento);
+  }
+  
+  if (btnComecar) {
+    btnComecar.addEventListener("click", () => {
+      // scroll to investments section then launch tour
+      irParaSecaoInvestimentos();
+      const stepsComparacao = [
+        {selector: "#valorInvestimento", text: "Digite ou verifique o valor mensal disponível para investir."},
+        {selector: "#mesesInvestimento", text: "Selecione por quantos meses você planeja investir."},
+        {selector: "#resultadoInvestimentos", text: "Veja aqui o ranking dos investimentos e o lucro estimado."},
+        {selector: ".ladoGrafico", text: "O gráfico mostra o crescimento mês a mês do melhor investimento."}
+      ];
+      startTour(stepsComparacao, perguntaMilhao);
+    });
+  }
+  
+  // Fechar modal ao clicar no overlay
+  if (overlay) {
+    overlay.addEventListener("click", fecharModalInvestimento);
+  }
+  
+  // Fechar modal ao pressionar ESC
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      fecharModalInvestimento();
+    }
+  });
+});
